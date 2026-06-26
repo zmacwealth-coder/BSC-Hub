@@ -36,6 +36,33 @@ yarn-error.log*
 # vercel
 .vercel
 
+# supabase local dev
+supabase/.branches
+supabase/.temp
+
+# MCP config (may contain tokens)
+.mcp.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE / Editor configurations
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS junk files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Agent / AI Helper configurations
+.agents/
+skills-lock.json
+CLAUDE.md
+
