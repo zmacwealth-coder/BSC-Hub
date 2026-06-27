@@ -8,7 +8,8 @@ import {
   updateStudent,
   deleteStudent,
   generateResultToken,
-  updateTermResumptionDate
+  updateTermResumptionDate,
+  setActiveAcademicPeriod
 } from '@/app/actions/school';
 import {
   Users,
@@ -77,6 +78,10 @@ export default function AdminDashboardClient({
   const [academicSessionId, setAcademicSessionId] = useState(sessions.find(s => s.is_active)?.id || sessions[0]?.id || '');
   const [academicClassId, setAcademicClassId] = useState(classes[0]?.id || '');
 
+  // Active configurations select states
+  const [selectedActiveSessionId, setSelectedActiveSessionId] = useState(sessions.find(s => s.is_active)?.id || sessions[0]?.id || '');
+  const [selectedActiveTermId, setSelectedActiveTermId] = useState(terms.find(t => t.is_active)?.id || terms[0]?.id || '');
+
 
   // Loader state for actions
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -118,6 +123,23 @@ export default function AdminDashboardClient({
       router.refresh();
     } catch (err: any) {
       alert(err.message || 'Failed to update resumption date.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSetActivePeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedActiveSessionId || !selectedActiveTermId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await setActiveAcademicPeriod(selectedActiveSessionId, selectedActiveTermId);
+      if (res.success) {
+        alert('Active academic period updated successfully.');
+        router.refresh();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to update active period.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1026,20 +1048,41 @@ export default function AdminDashboardClient({
                 <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
                   <FileCode className="h-5 w-5 text-primary" /> Active Configurations
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <span className="text-slate-400 font-semibold block mb-0.5">Active Session</span>
-                    <span className="font-bold text-slate-800">{sessions.find(s => s.is_active)?.name || 'None'}</span>
+                <form onSubmit={handleSetActivePeriod} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
+                      <span className="text-slate-400 font-semibold block">Active Session</span>
+                      <select
+                        value={selectedActiveSessionId}
+                        onChange={(e) => setSelectedActiveSessionId(e.target.value)}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-primary font-semibold cursor-pointer"
+                      >
+                        {sessions.map(s => <option key={s.id} value={s.id}>{s.name} {s.is_active ? '(Active)' : ''}</option>)}
+                      </select>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
+                      <span className="text-slate-400 font-semibold block">Active Term</span>
+                      <select
+                        value={selectedActiveTermId}
+                        onChange={(e) => setSelectedActiveTermId(e.target.value)}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-primary font-semibold cursor-pointer"
+                      >
+                        {terms.map(t => <option key={t.id} value={t.id}>{t.name} {t.is_active ? '(Active)' : ''}</option>)}
+                      </select>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 col-span-2">
+                      <span className="text-slate-400 font-semibold block mb-0.5">Classes Configured</span>
+                      <span className="font-bold text-slate-800">{classes.map(c => c.name).join(', ') || 'None'}</span>
+                    </div>
                   </div>
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <span className="text-slate-400 font-semibold block mb-0.5">Active Term</span>
-                    <span className="font-bold text-slate-800">{terms.find(t => t.is_active)?.name || 'None'}</span>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 col-span-2">
-                    <span className="text-slate-400 font-semibold block mb-0.5">Classes configured</span>
-                    <span className="font-bold text-slate-800">{classes.map(c => c.name).join(', ') || 'None'}</span>
-                  </div>
-                </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white font-bold rounded-xl transition shadow disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    Save Active Configurations
+                  </button>
+                </form>
 
                 <div className="border-t border-slate-100 pt-4 space-y-3">
                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Term Resumption Settings</h4>

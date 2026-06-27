@@ -95,12 +95,16 @@ export async function GET(request: Request) {
 
     if (resErr || !results) {
       return NextResponse.json({ error: 'Results not found' }, { status: 404 });
-    }    // Fetch all results for this student in the current session (First, Second, and Third Term)
+    }
+
+    const filteredResults = results.filter(r => r.ca_score > 0 || r.exam_score > 0);    // Fetch all results for this student in the current session (First, Second, and Third Term)
     const { data: allSessionResults } = await supabase
       .from('results')
-      .select('term_id, total_score')
+      .select('term_id, total_score, ca_score, exam_score')
       .eq('student_id', studentId)
       .eq('session_id', targetSessionId!);
+
+    const filteredSessionResults = (allSessionResults || []).filter(r => r.ca_score > 0 || r.exam_score > 0);
 
     // Fetch all terms to map term_id to term name
     const { data: allTerms } = await supabase
@@ -115,7 +119,7 @@ export async function GET(request: Request) {
     let t2Sum = 0, t2Count = 0;
     let t3Sum = 0, t3Count = 0;
 
-    allSessionResults?.forEach((r) => {
+    filteredSessionResults.forEach((r) => {
       if (firstTerm && r.term_id === firstTerm.id) {
         t1Sum += r.total_score;
         t1Count++;
@@ -282,40 +286,47 @@ export async function GET(request: Request) {
       let currentY = tableTop + 20;
       let totalSum = 0;
 
-      results.forEach((row, index) => {
-        const ca = row.ca_score;
-        const exam = row.exam_score;
-        const total = row.total_score;
-        totalSum += total;
-
-        // Alternating row background
-        if (index % 2 === 1) {
-          doc.rect(40, currentY, 515.28, 18).fill(lightBgColor);
-        }
-
-        // Draw row values
-        doc.fillColor(textColor).font('Helvetica').fontSize(8.5);
-        doc.text((row.subjects as any)?.name || 'Subject', 50, currentY + 5);
-        doc.text(ca.toFixed(0), 230, currentY + 5, { width: 50, align: 'center' });
-        doc.text(exam.toFixed(0), 285, currentY + 5, { width: 60, align: 'center' });
-        
-        doc.font('Helvetica-Bold');
-        doc.text(total.toFixed(0), 350, currentY + 5, { width: 65, align: 'center' });
-        doc.text(row.grade, 420, currentY + 5, { width: 45, align: 'center' });
-        
-        doc.font('Helvetica');
-        doc.text(row.remark, 470, currentY + 5, { width: 75, align: 'center' });
-
-        // Thin row separator line
+      if (filteredResults.length === 0) {
+        doc.fillColor('#94a3b8').font('Helvetica-Oblique').fontSize(8.5);
+        doc.text('No academic results recorded for this term.', 50, currentY + 5);
         doc.strokeColor('#f1f5f9').lineWidth(0.5).moveTo(40, currentY + 18).lineTo(555.28, currentY + 18).stroke();
-        
         currentY += 18;
-      });
+      } else {
+        filteredResults.forEach((row, index) => {
+          const ca = row.ca_score;
+          const exam = row.exam_score;
+          const total = row.total_score;
+          totalSum += total;
+
+          // Alternating row background
+          if (index % 2 === 1) {
+            doc.rect(40, currentY, 515.28, 18).fill(lightBgColor);
+          }
+
+          // Draw row values
+          doc.fillColor(textColor).font('Helvetica').fontSize(8.5);
+          doc.text((row.subjects as any)?.name || 'Subject', 50, currentY + 5);
+          doc.text(ca.toFixed(0), 230, currentY + 5, { width: 50, align: 'center' });
+          doc.text(exam.toFixed(0), 285, currentY + 5, { width: 60, align: 'center' });
+          
+          doc.font('Helvetica-Bold');
+          doc.text(total.toFixed(0), 350, currentY + 5, { width: 65, align: 'center' });
+          doc.text(row.grade, 420, currentY + 5, { width: 45, align: 'center' });
+          
+          doc.font('Helvetica');
+          doc.text(row.remark, 470, currentY + 5, { width: 75, align: 'center' });
+
+          // Thin row separator line
+          doc.strokeColor('#f1f5f9').lineWidth(0.5).moveTo(40, currentY + 18).lineTo(555.28, currentY + 18).stroke();
+          
+          currentY += 18;
+        });
+      }
 
       // --- SUMMARY STATISTICS BAR ---
       doc.rect(40, currentY, 515.28, 18).fill('#f1f5f9');
       
-      const numSubjects = results.length;
+      const numSubjects = filteredResults.length;
       const average = numSubjects > 0 ? (totalSum / numSubjects) : 0;
 
       doc.fillColor(brandNavy).font('Helvetica-Bold').fontSize(8.5);

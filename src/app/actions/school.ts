@@ -440,6 +440,102 @@ export async function updateSubject(id: string, name: string, description?: stri
   return { success: true, subject: data };
 }
 
+export async function setActiveAcademicPeriod(sessionId: string, termId: string) {
+  const { dbUser } = await verifyRole(['SUPER_ADMIN']);
+  const supabase = await createClient();
+
+  // Fetch the current active term and session before we change them
+  const { data: currentActiveTerm } = await supabase
+    .from('terms')
+    .select('name')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  const { data: currentActiveSession } = await supabase
+    .from('sessions')
+    .select('name')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  // Check if the third term of the active session is completed (moving away from it)
+  if (currentActiveTerm?.name.toLowerCase().includes('third') && currentActiveSession?.name) {
+    const sessionName = currentActiveSession.name;
+    const parts = sessionName.split('/');
+    if (parts.length === 2) {
+      const year1 = parseInt(parts[0], 10);
+      const year2 = parseInt(parts[1], 10);
+      if (!isNaN(year1) && !isNaN(year2)) {
+        const nextSessionName = `${year1 + 1}/${year2 + 1}`;
+        
+        const { data: existingSession } = await supabase
+          .from('sessions')
+          .select('id')
+          .eq('name', nextSessionName)
+          .maybeSingle();
+          
+        if (!existingSession) {
+          await supabase
+            .from('sessions')
+            .insert({ name: nextSessionName, is_active: false });
+            
+          await supabase.from('audit_logs').insert({
+            action: 'AUTO_CREATE_SESSION',
+            user_id: dbUser.id,
+            details: `Automatically created next session "${nextSessionName}" after completion of Third Term of "${sessionName}"`,
+            ip_address: '127.0.0.1',
+            user_agent: 'Server Action'
+          });
+        }
+      }
+    }
+  }
+
+  // Set all sessions to inactive
+  const { error: sessDeactErr } = await supabase
+    .from('sessions')
+    .update({ is_active: false })
+    .neq('id', sessionId); // Update all others
+  
+  if (sessDeactErr) throw new Error(`Deactivating sessions failed: ${sessDeactErr.message}`);
+
+  // Set selected session to active
+  const { error: sessActErr } = await supabase
+    .from('sessions')
+    .update({ is_active: true })
+    .eq('id', sessionId);
+
+  if (sessActErr) throw new Error(`Activating session failed: ${sessActErr.message}`);
+
+  // Set all terms to inactive
+  const { error: termDeactErr } = await supabase
+    .from('terms')
+    .update({ is_active: false })
+    .neq('id', termId);
+
+  if (termDeactErr) throw new Error(`Deactivating terms failed: ${termDeactErr.message}`);
+
+  // Set selected term to active
+  const { error: termActErr } = await supabase
+    .from('terms')
+    .update({ is_active: true })
+    .eq('id', termId);
+
+  if (termActErr) throw new Error(`Activating term failed: ${termActErr.message}`);
+
+  await supabase.from('audit_logs').insert({
+    action: 'SET_ACTIVE_PERIOD',
+    user_id: dbUser.id,
+    details: `Set active session ID ${sessionId} and active term ID ${termId}`,
+    ip_address: '127.0.0.1',
+    user_agent: 'Server Action'
+  });
+
+  revalidatePath('/admin');
+  revalidatePath('/teacher');
+  return { success: true };
+}
+
+
 
 
 

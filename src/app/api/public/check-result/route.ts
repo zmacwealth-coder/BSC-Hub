@@ -149,14 +149,16 @@ export async function POST(request: Request) {
     });
 
     // Format results to match the required API contract
-    const formattedResults = resultsData.map(r => ({
-      subjectName: (r.subjects as any)?.name || 'Unknown Subject',
-      caScore: r.ca_score,
-      examScore: r.exam_score,
-      totalScore: r.total_score,
-      grade: r.grade,
-      remark: r.remark
-    }));
+    const formattedResults = resultsData
+      .filter(r => r.ca_score > 0 || r.exam_score > 0)
+      .map(r => ({
+        subjectName: (r.subjects as any)?.name || 'Unknown Subject',
+        caScore: r.ca_score,
+        examScore: r.exam_score,
+        totalScore: r.total_score,
+        grade: r.grade,
+        remark: r.remark
+      }));
 
     return NextResponse.json({
       success: true,
