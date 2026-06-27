@@ -181,6 +181,8 @@ export default function TeacherDashboardClient({
           .select('*, students(full_name, class_id), subjects(name)')
           .order('created_at', { ascending: false });
         if (newResults) setResults(newResults);
+      } else {
+        setSyncError(result.error || 'Failed to synchronize spreadsheet.');
       }
     } catch (err: any) {
       setSyncError(err.message || 'Failed to synchronize spreadsheet.');
@@ -542,8 +544,8 @@ export default function TeacherDashboardClient({
                     type="button"
                     onClick={() => {
                       const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || 'Class';
-                      const headers = ['Student ID', 'CA Score (Max 30)', 'Exam Score (Max 70)'];
-                      const csvRows = classStudents.map(s => [s.id, '', '']);
+                      const headers = ['Student Full Name', 'CA Score (Max 30)', 'Exam Score (Max 70)'];
+                      const csvRows = classStudents.map(s => [s.full_name, '', '']);
                       const csvContent = "data:text/csv;charset=utf-8," 
                         + [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
                       
@@ -572,7 +574,7 @@ export default function TeacherDashboardClient({
                       Your Google Spreadsheet must contain columns in this specific layout:
                     </p>
                     <ul className="text-xs list-disc list-inside text-blue-800 space-y-1 pt-1.5">
-                      <li>Column A: **Student Code** (e.g. `BSC-2026-0001`)</li>
+                      <li>Column A: **Student Full Name** (or **Student ID**)</li>
                       <li>Column B: **CA Score** (Numeric, maximum of 30.0)</li>
                       <li>Column C: **Exam Score** (Numeric, maximum of 70.0)</li>
                     </ul>
