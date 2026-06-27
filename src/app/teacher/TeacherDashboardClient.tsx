@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { syncGoogleSheetMarks } from '@/app/actions/googleSync';
-import { saveStudentMarks } from '@/app/actions/school';
+import { saveStudentMarks, createSubject, updateSubject } from '@/app/actions/school';
 import {
   FileSpreadsheet,
   Layers,
@@ -43,6 +43,9 @@ export default function TeacherDashboardClient({
 }) {
   const [activeTab, setActiveTab] = useState<'sync' | 'results' | 'logs' | 'manual' | 'security'>('sync');
   
+  // Subject list state
+  const [subjectList, setSubjectList] = useState<any[]>(subjects);
+
   // Selection States
   const [selectedClassId, setSelectedClassId] = useState(classes[0]?.id || '');
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
@@ -64,6 +67,21 @@ export default function TeacherDashboardClient({
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+
+  // Add Subject Modal State
+  const [isAddSubjectModalOpen, setIsAddSubjectModalOpen] = useState(false);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [newSubjectDescription, setNewSubjectDescription] = useState('');
+  const [isAddingSubject, setIsAddingSubject] = useState(false);
+  const [addSubjectError, setAddSubjectError] = useState<string | null>(null);
+
+  // Edit Subject Modal State
+  const [isEditSubjectModalOpen, setIsEditSubjectModalOpen] = useState(false);
+  const [editSubjectId, setEditSubjectId] = useState('');
+  const [editSubjectName, setEditSubjectName] = useState('');
+  const [editSubjectDescription, setEditSubjectDescription] = useState('');
+  const [isEditingSubject, setIsEditingSubject] = useState(false);
+  const [editSubjectError, setEditSubjectError] = useState<string | null>(null);
 
   const [teacherNewPassword, setTeacherNewPassword] = useState('');
   const [teacherConfirmPassword, setTeacherConfirmPassword] = useState('');
@@ -212,6 +230,66 @@ export default function TeacherDashboardClient({
     }
   };
 
+  const handleAddSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubjectName.trim()) return;
+
+    setIsAddingSubject(true);
+    setAddSubjectError(null);
+
+    try {
+      const res = await createSubject(newSubjectName, newSubjectDescription);
+      if (res.success && res.subject) {
+        setSubjectList(prev => [...prev, res.subject].sort((a, b) => a.name.localeCompare(b.name)));
+        setSelectedSubjectId(res.subject.id);
+        setNewSubjectName('');
+        setNewSubjectDescription('');
+        setIsAddSubjectModalOpen(false);
+        setSyncSuccessMsg(`Subject "${res.subject.name}" added successfully!`);
+      }
+    } catch (err: any) {
+      setAddSubjectError(err.message || 'Failed to add subject.');
+    } finally {
+      setIsAddingSubject(false);
+    }
+  };
+
+  const handleEditSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editSubjectName.trim() || !editSubjectId) return;
+
+    setIsEditingSubject(true);
+    setEditSubjectError(null);
+
+    try {
+      const res = await updateSubject(editSubjectId, editSubjectName, editSubjectDescription);
+      if (res.success && res.subject) {
+        setSubjectList(prev => prev.map(s => s.id === res.subject.id ? res.subject : s).sort((a, b) => a.name.localeCompare(b.name)));
+        
+        // Also update the name in syncLogs if present
+        setSyncLogs(prev => prev.map(log => {
+          if (log.subject_id === res.subject.id) {
+            return {
+              ...log,
+              subjects: { ...log.subjects, name: res.subject.name }
+            };
+          }
+          return log;
+        }));
+
+        setIsEditSubjectModalOpen(false);
+        setEditSubjectId('');
+        setEditSubjectName('');
+        setEditSubjectDescription('');
+        setSyncSuccessMsg(`Subject "${res.subject.name}" updated successfully!`);
+      }
+    } catch (err: any) {
+      setEditSubjectError(err.message || 'Failed to update subject.');
+    } finally {
+      setIsEditingSubject(false);
+    }
+  };
+
   // Client-side live calculation mapping
   const getLiveCalculatedScore = (ca: number, exam: number) => {
     const total = ca + exam;
@@ -334,13 +412,41 @@ export default function TeacherDashboardClient({
                 </h3>
                 <form onSubmit={handleSyncMarks} className="space-y-4 text-sm">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Subject</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-semibold text-slate-400 uppercase">Subject</label>
+                      <div className="flex gap-2 items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const activeSub = subjectList.find(s => s.id === selectedSubjectId);
+                            if (activeSub) {
+                              setEditSubjectId(activeSub.id);
+                              setEditSubjectName(activeSub.name);
+                              setEditSubjectDescription(activeSub.description || '');
+                              setIsEditSubjectModalOpen(true);
+                            }
+                          }}
+                          disabled={!selectedSubjectId}
+                          className="text-xs text-slate-500 hover:text-slate-700 font-semibold flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                        <span className="text-slate-300 text-[10px]">|</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddSubjectModalOpen(true)}
+                          className="text-xs text-primary hover:text-primary-hover font-semibold flex items-center gap-0.5 cursor-pointer"
+                        >
+                          + Add New
+                        </button>
+                      </div>
+                    </div>
                     <select
                       value={selectedSubjectId}
                       onChange={(e) => setSelectedSubjectId(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
                     >
-                      {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {subjectList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -514,8 +620,31 @@ export default function TeacherDashboardClient({
                       onChange={(e) => setSelectedSubjectId(e.target.value)}
                       className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-800 bg-white"
                     >
-                      {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {subjectList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const activeSub = subjectList.find(s => s.id === selectedSubjectId);
+                        if (activeSub) {
+                          setEditSubjectId(activeSub.id);
+                          setEditSubjectName(activeSub.name);
+                          setEditSubjectDescription(activeSub.description || '');
+                          setIsEditSubjectModalOpen(true);
+                        }
+                      }}
+                      disabled={!selectedSubjectId}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition border border-slate-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddSubjectModalOpen(true)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition border border-slate-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      + Add Subject
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -678,7 +807,7 @@ export default function TeacherDashboardClient({
                     onChange={(e) => setSelectedSubjectId(e.target.value)}
                     className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-800 bg-white"
                   >
-                    {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {subjectList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
 
@@ -859,6 +988,164 @@ export default function TeacherDashboardClient({
           )}
         </div>
       </main>
+
+      {/* Add Subject Modal */}
+      {isAddSubjectModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base">
+                <BookOpen className="h-5 w-5 text-primary" /> Add New Subject
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddSubjectModalOpen(false);
+                  setAddSubjectError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleAddSubject} className="p-6 space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 font-bold">Subject Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Mathematics, Chemistry"
+                  required
+                  value={newSubjectName}
+                  onChange={(e) => setNewSubjectName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 font-bold">Description (Optional)</label>
+                <textarea
+                  placeholder="Enter subject description..."
+                  value={newSubjectDescription}
+                  onChange={(e) => setNewSubjectDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white font-medium resize-none"
+                />
+              </div>
+
+              {addSubjectError && (
+                <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 flex gap-2 items-start text-xs font-medium">
+                  <AlertCircle className="h-4.5 w-4.5 text-red-500 shrink-0 mt-0.5" />
+                  <span>{addSubjectError}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddSubjectModalOpen(false);
+                    setAddSubjectError(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition border border-slate-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingSubject}
+                  className="px-4 py-2 bg-secondary hover:bg-secondary-hover text-white text-xs font-bold rounded-lg transition shadow disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isAddingSubject ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Adding...
+                    </>
+                  ) : (
+                    'Add Subject'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Subject Modal */}
+      {isEditSubjectModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base">
+                <BookOpen className="h-5 w-5 text-primary" /> Edit Subject Name
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditSubjectModalOpen(false);
+                  setEditSubjectError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleEditSubject} className="p-6 space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 font-bold">Subject Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Mathematics, Chemistry"
+                  required
+                  value={editSubjectName}
+                  onChange={(e) => setEditSubjectName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 font-bold">Description (Optional)</label>
+                <textarea
+                  placeholder="Enter subject description..."
+                  value={editSubjectDescription}
+                  onChange={(e) => setEditSubjectDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white font-medium resize-none"
+                />
+              </div>
+
+              {editSubjectError && (
+                <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 flex gap-2 items-start text-xs font-medium">
+                  <AlertCircle className="h-4.5 w-4.5 text-red-500 shrink-0 mt-0.5" />
+                  <span>{editSubjectError}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditSubjectModalOpen(false);
+                    setEditSubjectError(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition border border-slate-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isEditingSubject}
+                  className="px-4 py-2 bg-secondary hover:bg-secondary-hover text-white text-xs font-bold rounded-lg transition shadow disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isEditingSubject ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

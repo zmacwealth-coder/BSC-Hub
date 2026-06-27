@@ -375,4 +375,71 @@ export async function updateTermResumptionDate(termId: string, nextTermBegins: s
   return { success: true };
 }
 
+export async function createSubject(name: string, description?: string) {
+  const { dbUser } = await verifyRole(['TEACHER', 'SUPER_ADMIN']);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('subjects')
+    .insert({
+      name: name.trim(),
+      description: description?.trim() || null
+    })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error(`Subject "${name}" already exists.`);
+    }
+    throw new Error(`Failed to create subject: ${error.message}`);
+  }
+
+  await supabase.from('audit_logs').insert({
+    action: 'CREATE_SUBJECT',
+    user_id: dbUser.id,
+    details: `Created subject "${name}"`,
+    ip_address: '127.0.0.1',
+    user_agent: 'Server Action'
+  });
+
+  revalidatePath('/teacher');
+  return { success: true, subject: data };
+}
+
+export async function updateSubject(id: string, name: string, description?: string) {
+  const { dbUser } = await verifyRole(['TEACHER', 'SUPER_ADMIN']);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('subjects')
+    .update({
+      name: name.trim(),
+      description: description?.trim() || null
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error(`Subject "${name}" already exists.`);
+    }
+    throw new Error(`Failed to update subject: ${error.message}`);
+  }
+
+  await supabase.from('audit_logs').insert({
+    action: 'UPDATE_SUBJECT',
+    user_id: dbUser.id,
+    details: `Updated subject ID ${id} to "${name}"`,
+    ip_address: '127.0.0.1',
+    user_agent: 'Server Action'
+  });
+
+  revalidatePath('/teacher');
+  return { success: true, subject: data };
+}
+
+
+
 
