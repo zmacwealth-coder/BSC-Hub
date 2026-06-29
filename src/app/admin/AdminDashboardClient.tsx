@@ -9,7 +9,9 @@ import {
   deleteStudent,
   generateResultToken,
   updateTermResumptionDate,
-  setActiveAcademicPeriod
+  setActiveAcademicPeriod,
+  createSession,
+  createClass
 } from '@/app/actions/school';
 import {
   Users,
@@ -29,8 +31,11 @@ import {
   CheckCircle,
   HelpCircle,
   Plus,
-  RefreshCcw
+  RefreshCcw,
+  Download,
+  Upload
 } from 'lucide-react';
+
 import { activeSchoolConfig } from '@/config/whiteLabel.config';
 import {
   ResponsiveContainer,
@@ -85,7 +90,12 @@ export default function AdminDashboardClient({
 
   // Loader state for actions
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [seedStatus, setSeedStatus] = useState<string | null>(null);
+
+  // Manual Session & Class Creator States
+  const [newSessionName, setNewSessionName] = useState('');
+  const [newClassName, setNewClassName] = useState('');
+  const [newClassLevel, setNewClassLevel] = useState<'JUNIOR' | 'SENIOR'>('JUNIOR');
+
 
   // Student Form States
   const [stdId, setStdId] = useState('');
@@ -390,24 +400,110 @@ export default function AdminDashboardClient({
     }
   };
 
-  const handleTriggerSeeding = async () => {
-    if (!confirm('This will seed default roles, classes, subjects, fee categories, and 10 dummy students. Proceed?')) return;
+  const handleCreateSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSessionName) return;
     setIsSubmitting(true);
-    setSeedStatus('Scaffolding database schema...');
     try {
-      const res = await fetch('/api/admin/seed');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Seeding failed');
-      
-      setSeedStatus('Seeding completed successfully!');
-      alert('Seeding complete! Refreshing workspace.');
-      router.refresh();
+      const res = await createSession(newSessionName);
+      if (res.success) {
+        alert(`Session "${newSessionName}" created successfully.`);
+        setNewSessionName('');
+        router.refresh();
+      }
     } catch (err: any) {
-      setSeedStatus(`Seeding Error: ${err.message}`);
+      alert(err.message || 'Failed to create session.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const handleCreateClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClassName) return;
+    setIsSubmitting(true);
+    try {
+      const res = await createClass(newClassName, newClassLevel);
+      if (res.success) {
+        alert(`Class "${newClassName}" created successfully.`);
+        setNewClassName('');
+        router.refresh();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to create class.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/backup');
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to download backup');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bsc_hub_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      alert('Backup downloaded successfully.');
+    } catch (err: any) {
+      alert(err.message || 'Error downloading backup.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const confirmMsg = 'WARNING: This will overwrite the entire database and restore the contents of the backup. Any current data that is not in the backup will be lost. Are you sure you want to proceed?';
+    if (!confirm(confirmMsg)) {
+      e.target.value = ''; // Reset file input
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const text = event.target?.result as string;
+          const backupData = JSON.parse(text);
+
+          const res = await fetch('/api/admin/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(backupData)
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Restore failed');
+
+          alert('Backup restored successfully! The page will now refresh.');
+          window.location.reload();
+        } catch (err: any) {
+          alert(err.message || 'Failed to parse or restore backup.');
+          setIsSubmitting(false);
+        }
+      };
+      reader.readAsText(file);
+    } catch (err: any) {
+      alert(err.message || 'Error reading backup file.');
+      setIsSubmitting(false);
+    } finally {
+      e.target.value = ''; // Reset file input
+    }
+  };
+
 
   // Filter students based on search query
   const filteredStudents = students.filter(s =>
@@ -1021,27 +1117,106 @@ export default function AdminDashboardClient({
           {/* TAB 5: SYSTEM SETUP */}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Database scaffolding controls */}
-              <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm space-y-4">
-                <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
-                  <Database className="h-5 w-5 text-secondary" /> Database Seeding
-                </h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Use this utility to populate your database with baseline scholastic configs, roles, classes, subjects, and sample students for testing purposes.
-                </p>
-                <button
-                  onClick={handleTriggerSeeding}
-                  disabled={isSubmitting}
-                  className="px-4 py-2.5 bg-secondary hover:bg-secondary-hover text-white text-xs font-bold rounded-xl transition shadow flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCcw className="h-4 w-4" /> Seed System Mock Configurations
-                </button>
-                {seedStatus && (
-                  <div className="bg-slate-100 p-3 rounded-lg text-slate-700 text-xs font-mono">
-                    {seedStatus}
+              {/* Manual Session & Class Creator & Offline Backup & Restore */}
+              <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm space-y-6">
+                <div className="space-y-4">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                    <Database className="h-5 w-5 text-primary" /> Session & Class Creator
+                  </h3>
+                  
+                  {/* Create Session Form */}
+                  <form onSubmit={handleCreateSession} className="space-y-3">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">New Academic Session</h4>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. 2026/2027"
+                        required
+                        value={newSessionName}
+                        onChange={(e) => setNewSessionName(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="px-3 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-lg transition shadow disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Create
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Create Class Form */}
+                  <form onSubmit={handleCreateClass} className="space-y-3 pt-3 border-t border-slate-100">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">New Scholastic Class</h4>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. SS4"
+                        required
+                        value={newClassName}
+                        onChange={(e) => setNewClassName(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={newClassLevel}
+                          onChange={(e) => setNewClassLevel(e.target.value as any)}
+                          className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary bg-white font-medium"
+                        >
+                          <option value="JUNIOR">Junior Level</option>
+                          <option value="SENIOR">Senior Level</option>
+                        </select>
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="px-3 py-2 bg-secondary hover:bg-secondary-hover text-white text-xs font-bold rounded-lg transition shadow disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Create
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Offline Backup & Restore */}
+                <div className="space-y-4 pt-6 border-t border-slate-150">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Download className="h-5 w-5 text-secondary" /> Offline Backup & Restore
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Download the entire dashboard database as an offline backup file, or restore a previously downloaded backup.
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    <button
+                      type="button"
+                      onClick={handleDownloadBackup}
+                      disabled={isSubmitting}
+                      className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="h-4 w-4" /> Download Backup (.json)
+                    </button>
+                    
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleRestoreBackup}
+                        disabled={isSubmitting}
+                        className="hidden"
+                        id="restore-upload-input"
+                      />
+                      <label
+                        htmlFor="restore-upload-input"
+                        className={`w-full py-2.5 border border-dashed border-slate-300 hover:border-slate-400 text-slate-600 hover:text-slate-800 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer text-center ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}
+                      >
+                        <Upload className="h-4 w-4" /> Upload & Restore Backup
+                      </label>
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
+
 
               {/* Displays loaded settings */}
               <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm space-y-4">

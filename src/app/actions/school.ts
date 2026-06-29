@@ -535,6 +535,71 @@ export async function setActiveAcademicPeriod(sessionId: string, termId: string)
   return { success: true };
 }
 
+export async function createSession(name: string) {
+  const { dbUser } = await verifyRole(['SUPER_ADMIN']);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('sessions')
+    .insert({
+      name: name.trim(),
+      is_active: false
+    })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error(`Session "${name}" already exists.`);
+    }
+    throw new Error(`Failed to create session: ${error.message}`);
+  }
+
+  await supabase.from('audit_logs').insert({
+    action: 'CREATE_SESSION',
+    user_id: dbUser.id,
+    details: `Created session "${name}"`,
+    ip_address: '127.0.0.1',
+    user_agent: 'Server Action'
+  });
+
+  revalidatePath('/admin');
+  return { success: true, session: data };
+}
+
+export async function createClass(name: string, level: 'JUNIOR' | 'SENIOR') {
+  const { dbUser } = await verifyRole(['SUPER_ADMIN']);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('classes')
+    .insert({
+      name: name.trim().toUpperCase(),
+      level: level
+    })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error(`Class "${name}" already exists.`);
+    }
+    throw new Error(`Failed to create class: ${error.message}`);
+  }
+
+  await supabase.from('audit_logs').insert({
+    action: 'CREATE_CLASS',
+    user_id: dbUser.id,
+    details: `Created class "${name}" (${level})`,
+    ip_address: '127.0.0.1',
+    user_agent: 'Server Action'
+  });
+
+  revalidatePath('/admin');
+  return { success: true, class: data };
+}
+
+
 
 
 
